@@ -121,6 +121,26 @@ def is_due(entry: dict, state: dict, now_ts: float) -> bool:
     return (now_ts - last) >= interval
 
 
+# ── Dynamic-content normalization ──────────────────────────────────────────────
+# Strip lines that change on every page load (ad countdowns, relative
+# timestamps) BEFORE hashing, so the fingerprint only reflects real content.
+# Without this, every loop "detects" a change and spams detections.
+import re as _re
+DYNAMIC_LINE_PATTERNS = [
+    r"^ad ends in \d+$",              # visagrader video-ad countdown
+    r"\d+\s+(second|minute|hour)s?\s+ago",  # relative timestamps
+]
+
+def normalize_text(text: str) -> str:
+    out = []
+    for line in text.splitlines():
+        s = line.strip()
+        if any(_re.search(p, s, _re.IGNORECASE) for p in DYNAMIC_LINE_PATTERNS):
+            continue
+        out.append(line)
+    return "\n".join(out).strip()
+
+
 # ── Page scraping ──────────────────────────────────────────────────────────────
 CLOUDFLARE_KEYWORDS = ["security service", "verifying you are not a bot", "Ray ID", "Cloudflare"]
 
@@ -158,13 +178,13 @@ async def get_page_content(browser, url: str) -> tuple[str, str]:
             except Exception:
                 pass
 
-        text = await page.evaluate("""() => {
+        text = normalize_text(await page.evaluate("""() => {
             ['nav','footer','header','script','style','noscript',
              '.cookie-banner','#cookie-notice','.ads','.advertisement']
               .forEach(sel => document.querySelectorAll(sel)
                 .forEach(el => el.remove()));
             return document.body?.innerText?.trim() ?? '';
-        }""")
+        }"""))
 
         if any(kw in text for kw in CLOUDFLARE_KEYWORDS):
             raise RuntimeError("Cloudflare challenge page detected — bot blocked")
