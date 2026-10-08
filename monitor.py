@@ -130,8 +130,14 @@ DYNAMIC_LINE_PATTERNS = [
     r"^ad ends in \d+$",              # visagrader video-ad countdown
     r"\d+\s+(second|minute|hour)s?\s+ago",  # relative timestamps
 ]
+# Tokens that rotate on every load but sit inline within a line.
+INLINE_PATTERNS = [
+    r"iad\d*::[A-Za-z0-9_.\-]+",      # checkvisaslots ad-impression tokens
+]
 
 def normalize_text(text: str) -> str:
+    for p in INLINE_PATTERNS:
+        text = _re.sub(p, "", text, flags=_re.IGNORECASE)
     out = []
     for line in text.splitlines():
         s = line.strip()
