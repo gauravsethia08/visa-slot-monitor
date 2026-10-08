@@ -132,7 +132,7 @@ DYNAMIC_LINE_PATTERNS = [
 ]
 # Tokens that rotate on every load but sit inline within a line.
 INLINE_PATTERNS = [
-    r"iad\d*::[A-Za-z0-9_.\-]+",      # checkvisaslots ad-impression tokens
+    r"[a-z]{2,4}\d*::[A-Za-z0-9_.\-]+",  # Vercel ad-impression tokens (iad1::, sfo1::, …)
 ]
 
 def normalize_text(text: str) -> str:
