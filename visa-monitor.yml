@@ -1,0 +1,122 @@
+name: 🛂 Visa Slot Monitor
+
+# ── Sub-5-minute mode ──────────────────────────────────────────────────────────
+# GitHub Actions cron cannot tick faster than every 5 minutes, so instead of
+# one run per check, each run launches a PERSISTENT LOOPER: a single job that
+# checks every 60s internally for ~6 hours (job timeout 355 min), then exits.
+# Cron restarts the looper 4×/day. Net effect: 60-second checks, 24/7.
+#
+# Per-URL intervals live in config.py: visagrader every 60s, checkvisaslots
+# every 300s (its bot mitigation + 20 sessions/day fair use can't take 60s).
+on:
+  schedule:
+    # Restart the looper every 6 hours (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+
+  # Start a run on push (used for the initial setup; the monitor's own
+  # state commits carry [skip ci] so they never re-trigger)
+  push:
+    branches: [main]
+
+  # Adds a "Run workflow" button in GitHub UI for manual testing
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Check Visa Slots (persistent looper)
+    runs-on: ubuntu-latest
+
+    # GitHub kills jobs after 6h — stop just before, SIGTERM lets the
+    # monitor save + commit state gracefully.
+    timeout-minutes: 355
+
+    # Needed so the job can commit state.json back to the repo
+    permissions:
+      contents: write
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          # Pull the latest commit (including state.json from last run)
+          fetch-depth: 1
+
+      # ── 2. Python ────────────────────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # ── 3. Cache pip packages ────────────────────────────────────────────────
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt') }}
+
+      # ── 4. Cache Playwright Chromium (~300 MB) ───────────────────────────────
+      #  This is the key optimisation — saves ~90 seconds per run after first run
+      - name: Cache Playwright browser
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('requirements.txt') }}
+
+      # ── 5. Install Python dependencies ──────────────────────────────────────
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ── 6. Install Playwright (browser only if not cached) ──────────────────
+      - name: Install Playwright browser (first time only)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: playwright install chromium
+
+      # Always install OS-level system dependencies (fast, ~5 sec)
+      - name: Install Playwright system deps
+        run: playwright install-deps chromium
+
+      # ── 6b. Git identity (the looper commits state.json periodically) ────────
+      - name: Configure git identity
+        run: |
+          git config user.name  "Visa Monitor Bot"
+          git config user.email "visa-monitor@github-actions"
+
+      # ── 7. Run the monitor (persistent 60s looper, ~6h per job) ──────────────
+      - name: Run visa slot monitor
+        run: python monitor.py
+        env:
+          # These come from GitHub Secrets — never hardcode credentials here
+          TELEGRAM_ENABLED:     "true"
+          TELEGRAM_BOT_TOKEN:   ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:     ${{ secrets.TELEGRAM_CHAT_ID }}
+
+          # Optional: uncomment and add secrets if you want WhatsApp/SMS too
+          # WHATSAPP_ENABLED:       "true"
+          # TWILIO_ACCOUNT_SID:     ${{ secrets.TWILIO_ACCOUNT_SID }}
+          # TWILIO_AUTH_TOKEN:      ${{ secrets.TWILIO_AUTH_TOKEN }}
+          # TWILIO_WHATSAPP_FROM:   "whatsapp:+14155238886"
+          # TWILIO_WHATSAPP_TO:     ${{ secrets.TWILIO_WHATSAPP_TO }}
+
+          # SMS_ENABLED:            "true"
+          # TWILIO_SMS_FROM:        ${{ secrets.TWILIO_SMS_FROM }}
+          # TWILIO_SMS_TO:          ${{ secrets.TWILIO_SMS_TO }}
+
+          # 60 = persistent looper mode: 60s tick, per-URL intervals in config.py
+          # 0  = single-shot mode (checks every URL once and exits)
+          CHECK_INTERVAL: "60"
+
+          # Commit state.json back to the repo every N loop iterations
+          STATE_COMMIT_EVERY: "30"
+
+      # ── 8. Commit state + detections back to repo (final save) ────────────────
+      #  The looper commits state periodically and detections immediately;
+      #  this is the last sync.
+      - name: Save state to repo
+        if: always()
+        run: |
+          git add state.json detections.jsonl
+          # Only commit if something actually changed
+          git diff --staged --quiet || git commit -m "chore: update monitor state [skip ci]"
+          git push
