@@ -1,0 +1,15 @@
+# Never commit your real secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+*.egg-info/
+
+# Logs (state.json IS committed intentionally — it's how state persists)
+monitor.log
