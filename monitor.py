@@ -130,6 +130,7 @@ DYNAMIC_LINE_PATTERNS = [
     r"^ad ends in \d+$",              # visagrader video-ad countdown
     r"\d+\s+(second|minute|hour)s?\s+ago",  # relative timestamps
     r"^video (paused|muted|playing)$",     # visagrader video-ad player state
+    r"^(sponsored|advertisement)$",   # ad-block disclosure labels
 ]
 # Tokens that rotate on every load but sit inline within a line.
 INLINE_PATTERNS = [
