@@ -128,6 +128,7 @@ def is_due(entry: dict, state: dict, now_ts: float) -> bool:
 import re as _re
 DYNAMIC_LINE_PATTERNS = [
     r"^ad ends in \d+$",              # visagrader video-ad countdown
+    r"you can skip to video in \d+",  # visagrader video-ad skip overlay
     r"\d+\s+(second|minute|hour)s?\s+ago",  # relative timestamps
     r"^video (paused|muted|playing)$",     # visagrader video-ad player state
     r"^(sponsored|advertisement)$",   # ad-block disclosure labels
